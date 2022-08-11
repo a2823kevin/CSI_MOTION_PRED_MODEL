@@ -101,4 +101,4 @@ if __name__=="__main__":
         print(f"[ Valid | {epoch + 1:03d}/{n_epochs:03d} ] loss = {valid_loss:.5f}, acc = {valid_acc:.5f}")
 
         #save model
-        torch.save(model.state_dict(), "./model/csi_classifier")
+        torch.save(model.state_dict(), "./trained model/csi_classifier")
