@@ -4,7 +4,7 @@ from tqdm.auto import tqdm
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 
-from models.CNN_classifier import *
+from models.CNN_Classifier import *
 from utils import *
 
 if __name__=="__main__":
