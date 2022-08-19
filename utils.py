@@ -3,6 +3,8 @@ import numpy
 import pandas
 import cv2
 import torch
+from models.RNN import *
+from mp_utils import *
 
 def generate_CSI_dataset(fpath, ds_for, label=None, size=128):
     #load data
@@ -43,7 +45,7 @@ def generate_CSI_dataset(fpath, ds_for, label=None, size=128):
         #generate
         for i in range(len(fin)-size):
             data = fin.iloc[i:i+size, :]
-            data = (torch.tensor(data.transpose().to_numpy()).type(torch.float)).reshape(1, 128, size)
+            data = (torch.tensor(data.transpose().to_numpy()).type(torch.float))
             label = MP_fin.iloc[i+size-1, :]
             label = (torch.tensor(label.transpose().to_numpy()).type(torch.float)).reshape(1, 33)
             dataset.append((data, label))
@@ -80,19 +82,42 @@ def merge_datasets(dataset_lst):
             dataset_lst[0].append(dataset_lst[i][j])
     return dataset_lst[0]
 
+def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
+        model.eval()
+        if (mode=="from_ds"):
+            for i in range(len(ds)):
+                pcanvas, tcanvas = numpy.copy(drawing_utils["canvas"]), numpy.copy(drawing_utils["canvas"])
+                prediction = model(ds[i][0].to(device=device).reshape(1, 128, 128))
+                prediction_lm = generate_landmark(drawing_utils["landmark_template"], prediction)
+                solutions.drawing_utils.draw_landmarks(pcanvas, prediction_lm, drawing_utils["connection"], drawing_utils["pls"])
+                pcanvas = cv2.flip(pcanvas, 1)
+                cv2.putText(pcanvas, "prediction", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+
+                target_lm = generate_landmark(drawing_utils["landmark_template"], ds[i][1])
+                solutions.drawing_utils.draw_landmarks(tcanvas, target_lm, drawing_utils["connection"], drawing_utils["pls"])
+                tcanvas = cv2.flip(tcanvas, 1)
+                cv2.putText(tcanvas, "target", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+                cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, tcanvas), 1))
+                cv2.waitKey(1)
+
 if __name__=="__main__":
-    #for classifier
-    ds4classifier = generate_CSI_dataset("./training data/20220803143411_8CCE4E9A045C_test.csv", 
-    "classification", 
-    0)
-    print(ds4classifier[0])
+    with open("settings.json", "r") as fin:
+        settings = json.load(fin)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ds = generate_CSI_dataset("training data/20220818111807_8CCE4E9A045C_mp_skeleton.csv", "regression")
 
-    #for MP skeleton
-    ds4MP_skeleton = generate_CSI_dataset("./training data/20220803143454_8CCE4E9A045C_mp_skeleton.csv", 
-    "regression")
-    print(ds4MP_skeleton[0])
+    input_size = 128
+    hidden_size = 256
+    num_layers = 8
+    num_classes = 33
 
-    #for MP mask
-    ds4MP_mask = generate_CSI_dataset(("./training data/20220803143548_8CCE4E9A045C_mp_mask.csv", "./training data/20220803143548_mask.json"), 
-    "segmentation")
-    print(ds4MP_mask[0])
+    model = RNN(input_size, hidden_size, num_layers, num_classes, device)
+    model.load_state_dict(torch.load("trained model\csi_rnn"))
+
+    drawing_utils = {}
+    drawing_utils["landmark_template"] = get_landmark_template()
+    drawing_utils["connection"] = get_simplified_pose_connections()
+    drawing_utils["pls"] = get_simplified_pose_landmarks_style()
+    drawing_utils["canvas"] = numpy.zeros((settings["canvas_height"], settings["canvas_width"], 3), dtype=numpy.uint8)
+
+    test_model(device, model, drawing_utils, ds=ds)
