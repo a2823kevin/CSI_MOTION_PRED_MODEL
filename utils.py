@@ -1,4 +1,7 @@
 import json
+import socket
+import multiprocessing
+from multiprocessing import Manager
 import numpy
 import pandas
 import cv2
@@ -82,6 +85,32 @@ def merge_datasets(dataset_lst):
             dataset_lst[0].append(dataset_lst[i][j])
     return dataset_lst[0]
 
+def cam_proc(device, drawing_utils):
+    mppp = get_mp_pose_proccessor()
+    video_stream = cv2.VideoCapture(0)
+    while (True):
+        (ret, frame) = video_stream.read()
+        frame.flags.writeable = False
+        sp = get_simplified_pose(frame, mppp, skip_incomplete=False)
+        frame.flags.writeable = True
+        nodes = []
+
+        if (sp is not None):
+            for i in range(len(sp)):
+                nodes.append(sp[i][0])
+                nodes.append(sp[i][1])
+                nodes.append(sp[i][2])
+            
+            tcanvas = numpy.copy(drawing_utils["canvas"])
+            target = torch.tensor(nodes, dtype=torch.float, device=device).reshape(1, 33)
+            target_lm = generate_landmark(drawing_utils["landmark_template"], target)
+            solutions.drawing_utils.draw_landmarks(tcanvas, target_lm, drawing_utils["connection"], drawing_utils["pls"])
+            tcanvas = cv2.flip(tcanvas, 1)
+            cv2.putText(tcanvas, "target", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+            drawing_utils["tcanvas"] = tcanvas
+        else:
+            continue
+
 def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
         model.eval()
         if (mode=="from_ds"):
@@ -100,6 +129,51 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
                 cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, tcanvas), 1))
                 cv2.waitKey(1)
 
+        elif (mode=="realtime"):
+            #load settings
+            with open("settings.json", "r") as fin:
+                settings = json.load(fin)
+
+            #create UDP socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.bind(("", 3333))
+            print("started UDP server.")
+
+            #send "rx" to AP first
+            for i in range(10):
+                s.sendto("rx".encode(), (settings["AP_IP_ADDR"], 3333))
+
+            camproc = multiprocessing.Process(target=cam_proc, args=(device, drawing_utils))
+            camproc.start()
+
+            data = []
+            while (True):
+                (indata, _) = s.recvfrom(4096)
+                try:
+                    indata = json.loads(indata.decode())
+                    if (indata["client_MAC"] in settings["STA_MAC_ARRDS"]):
+                        csi = []
+                        for i in range(len(indata["CSI_info"])):
+                            csi.append(indata["CSI_info"][i][0])
+                            csi.append(indata["CSI_info"][i][1])
+                        data.append(csi)
+                except:
+                    continue
+
+                while (len(data)>128):
+                    data.pop(0)
+                if (len(data)==128):
+                    prediction = model(torch.transpose(torch.tensor(data, dtype=torch.float, device=device), 0, 1).reshape(1, 128, 128))
+                    prediction_lm = generate_landmark(drawing_utils["landmark_template"], prediction)
+                    pcanvas = numpy.copy(drawing_utils["canvas"])
+                    solutions.drawing_utils.draw_landmarks(pcanvas, prediction_lm, drawing_utils["connection"], drawing_utils["pls"])
+                    pcanvas = cv2.flip(pcanvas, 1)
+                    cv2.putText(pcanvas, "prediction", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
+                    print(drawing_utils["tcanvas"])
+                    if (drawing_utils["tcanvas"] is not None):
+                        cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, drawing_utils["tcanvas"]), 1))
+                        cv2.waitKey(1)
+
 if __name__=="__main__":
     with open("settings.json", "r") as fin:
         settings = json.load(fin)
@@ -114,10 +188,11 @@ if __name__=="__main__":
     model = RNN(input_size, hidden_size, num_layers, num_classes, device)
     model.load_state_dict(torch.load("trained model\csi_rnn"))
 
-    drawing_utils = {}
+    drawing_utils = Manager().dict()
     drawing_utils["landmark_template"] = get_landmark_template()
     drawing_utils["connection"] = get_simplified_pose_connections()
     drawing_utils["pls"] = get_simplified_pose_landmarks_style()
     drawing_utils["canvas"] = numpy.zeros((settings["canvas_height"], settings["canvas_width"], 3), dtype=numpy.uint8)
+    drawing_utils["tcanvas"] = None
 
-    test_model(device, model, drawing_utils, ds=ds)
+    test_model(device, model, drawing_utils, "realtime")
