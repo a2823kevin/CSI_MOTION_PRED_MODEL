@@ -149,7 +149,47 @@ def train_RNN(device):
             torch.save(model.state_dict(), "./trained model/csi_rnn")
             loss_min = loss
 
+def train_TCN(device):
+    input_size = 128
+    learning_rate = 5e-6
+    batch_size = 64
+    num_epochs = 20
+
+    train_dataset = generate_CSI_dataset("training data/20220818111807_8CCE4E9A045C_mp_skeleton.csv", "regression")
+    test_dataset = train_dataset[len(train_dataset)*8//10:]
+    train_dataset = train_dataset[0:len(train_dataset)*8//10]
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size)
+
+    model = temporal_convolution_network(input_size, 2, [109, 90, 71, 52, 33])
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    loss_min = 9999
+
+    for epoch in range(num_epochs):
+        for batch_idx, (data, targets) in enumerate(tqdm(train_loader)):
+            data = data.to(device=device)
+            targets = targets.to(device=device)
+            # forward
+            scores = model(data)
+            loss = criterion(scores, targets)
+
+            # backward
+            optimizer.zero_grad()
+            loss.backward()
+            
+            # gradient descent update step/adam step
+            optimizer.step()
+        print(f"epoch {epoch}:")
+        print(f"RMSE on training set: {check_accuracy(device, train_loader, model):2f}")
+        loss = check_accuracy(device, test_loader, model)
+        print(f"RMSE on test set: {loss:.2f}")
+        if (loss<loss_min):
+            torch.save(model.state_dict(), "./trained model/csi_tcn")
+            loss_min = loss
+
 if __name__=="__main__":
     os.environ['CUDA_LAUNCH_BLOCKING']='1'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_RNN(device)
+    train_TCN(device)

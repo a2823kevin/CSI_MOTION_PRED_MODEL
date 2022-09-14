@@ -31,7 +31,7 @@ def check_accuracy(device, loader, model):
         for x, y in loader:
             x = x.to(device=device)
             y = y.to(device=device)
-            scores = model(x).reshape(x.shape[0], 1, 33)
+            scores = model(x)
             losses.append(RMSE(scores, y))
 
     # Toggle model back to train

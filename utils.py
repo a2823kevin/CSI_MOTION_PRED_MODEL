@@ -195,6 +195,4 @@ if __name__=="__main__":
     ds = DataLoader(ds, 10, False)
     for batch in ds:
         imgs, labels = batch
-        print(model(imgs).shape)
-        print(labels.shape)
-        break
+        print(model(imgs))
