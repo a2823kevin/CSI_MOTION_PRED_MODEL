@@ -7,9 +7,10 @@ import pandas
 import cv2
 import torch
 from models.RNN import *
+from models.TCN import *
 from mp_utils import *
 
-def generate_CSI_dataset(fpath, ds_for, label=None, size=128):
+def generate_CSI_dataset(fpath, ds_for, label=None, size=75):
     #load data
     if (ds_for!="segmentation"):
         fin = pandas.read_csv(fpath)
@@ -127,6 +128,7 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
                 tcanvas = cv2.flip(tcanvas, 1)
                 cv2.putText(tcanvas, "target", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
                 cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, tcanvas), 1))
+                cv2.imwrite(f"test{i}.png", numpy.concatenate((pcanvas, tcanvas), 1))
                 cv2.waitKey(1)
 
         elif (mode=="realtime"):
@@ -169,7 +171,6 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
                     solutions.drawing_utils.draw_landmarks(pcanvas, prediction_lm, drawing_utils["connection"], drawing_utils["pls"])
                     pcanvas = cv2.flip(pcanvas, 1)
                     cv2.putText(pcanvas, "prediction", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
-                    print(drawing_utils["tcanvas"])
                     if (drawing_utils["tcanvas"] is not None):
                         cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, drawing_utils["tcanvas"]), 1))
                         cv2.waitKey(1)
@@ -178,15 +179,7 @@ if __name__=="__main__":
     with open("settings.json", "r") as fin:
         settings = json.load(fin)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ds = generate_CSI_dataset("training data/20220818111807_8CCE4E9A045C_mp_skeleton.csv", "regression")
-
-    input_size = 128
-    hidden_size = 256
-    num_layers = 8
-    num_classes = 33
-
-    model = RNN(input_size, hidden_size, num_layers, num_classes, device)
-    model.load_state_dict(torch.load("trained model\csi_rnn"))
+    ds = generate_CSI_dataset("training data/20220818111807_8CCE4E9A045C_mp_skeleton.csv", "regression", size=75)
 
     drawing_utils = Manager().dict()
     drawing_utils["landmark_template"] = get_landmark_template()
@@ -195,4 +188,13 @@ if __name__=="__main__":
     drawing_utils["canvas"] = numpy.zeros((settings["canvas_height"], settings["canvas_width"], 3), dtype=numpy.uint8)
     drawing_utils["tcanvas"] = None
 
-    test_model(device, model, drawing_utils, "realtime")
+    #test_model(device, model, drawing_utils, ds=ds)
+    model = temporal_convolution_network(128, 2, channels=[105, 82, 59, 36, 13])
+    #print(model)
+    from torch.utils.data import DataLoader
+    ds = DataLoader(ds, 10, False)
+    for batch in ds:
+        imgs, labels = batch
+        print(imgs.shape)
+        print(model(imgs))
+        break

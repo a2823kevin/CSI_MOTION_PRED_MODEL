@@ -7,7 +7,7 @@ class RNN(nn.Module):
         super(RNN, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True)
+        self.rnn = nn.RNN(input_size, hidden_size, num_layers, nonlinearity="relu", batch_first=True)
         self.fc = nn.Linear(hidden_size*128, num_classes)
         self.device = device
         self.to(device)

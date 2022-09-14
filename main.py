@@ -117,10 +117,11 @@ def train_RNN(device):
     test_dataset = train_dataset[len(train_dataset)*8//10:]
     train_dataset = train_dataset[0:len(train_dataset)*8//10]
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size)
 
     model = RNN(input_size, hidden_size, num_layers, num_classes, device)
+    print(model)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
