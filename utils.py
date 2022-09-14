@@ -51,7 +51,7 @@ def generate_CSI_dataset(fpath, ds_for, label=None, size=75):
             data = fin.iloc[i:i+size, :]
             data = (torch.tensor(data.transpose().to_numpy()).type(torch.float))
             label = MP_fin.iloc[i+size-1, :]
-            label = (torch.tensor(label.transpose().to_numpy()).type(torch.float)).reshape(1, 33)
+            label = (torch.tensor(label.transpose().to_numpy()).type(torch.float))
             dataset.append((data, label))
 
     #for MP mask model
@@ -189,12 +189,12 @@ if __name__=="__main__":
     drawing_utils["tcanvas"] = None
 
     #test_model(device, model, drawing_utils, ds=ds)
-    model = temporal_convolution_network(128, 2, channels=[105, 82, 59, 36, 13])
+    model = temporal_convolution_network(128, 2, channels=[109, 90, 71, 52, 33])
     #print(model)
     from torch.utils.data import DataLoader
     ds = DataLoader(ds, 10, False)
     for batch in ds:
         imgs, labels = batch
-        print(imgs.shape)
-        print(model(imgs))
+        print(model(imgs).shape)
+        print(labels.shape)
         break
