@@ -10,7 +10,15 @@ from models.RNN import *
 from models.TCN import *
 from mp_utils import *
 
-def generate_CSI_dataset(fpath, ds_for, label=None, size=75):
+def get_feature_num(fpath):
+    fin= pandas.read_csv(fpath)
+    num = 0
+    for key in fin.keys():
+        if ("subcarrier" in key):
+            num += 1
+    return num
+
+def generate_CSI_dataset(fpath, ds_for, label=None, size=25):
     #load data
     if (ds_for!="segmentation"):
         fin = pandas.read_csv(fpath)
@@ -19,6 +27,7 @@ def generate_CSI_dataset(fpath, ds_for, label=None, size=75):
         with open(fpath[1], "r") as f:
             MP_fin = json.load(f)
 
+    n_feat = get_feature_num(fpath)
     dataset = []
     #for classifier model
     if (ds_for=="classification"):
@@ -28,7 +37,7 @@ def generate_CSI_dataset(fpath, ds_for, label=None, size=75):
         #generate
         for i in range(len(fin)-size):
             data = fin.iloc[i:i+size, :]
-            data = (torch.tensor(data.transpose().to_numpy()).type(torch.float)).reshape(1, 128, size)
+            data = (torch.tensor(data.transpose().to_numpy()).type(torch.float)).reshape(1, n_feat, size)
             dataset.append((data, label))
     
     #for MP skeleton model
@@ -65,7 +74,7 @@ def generate_CSI_dataset(fpath, ds_for, label=None, size=75):
         #generate
         for i in range(len(fin)-size):
             data = fin.iloc[i:i+size, :]
-            data = (torch.tensor(data.transpose().to_numpy()).type(torch.float)).reshape(1, 128, size)
+            data = (torch.tensor(data.transpose().to_numpy()).type(torch.float)).reshape(1, n_feat, size)
             label = numpy.zeros((settings["canvas_height"], settings["canvas_width"]), numpy.uint8)
             (cts, hole_idx) = MP_fin[str(timestamp[i+size-1])]
             for i in range(len(cts)):
@@ -179,7 +188,8 @@ if __name__=="__main__":
     with open("settings.json", "r") as fin:
         settings = json.load(fin)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ds = generate_CSI_dataset("training data/20220818111807_8CCE4E9A045C_mp_skeleton.csv", "regression", size=75)
+    print(device)
+    ds = generate_CSI_dataset("training data/20220915203948_8CCE4E9A045C_mp_skeleton.csv", "regression", size=75)
 
     drawing_utils = Manager().dict()
     drawing_utils["landmark_template"] = get_landmark_template()

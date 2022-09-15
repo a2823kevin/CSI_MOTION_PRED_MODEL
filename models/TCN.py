@@ -41,7 +41,7 @@ class temporal_block(nn.Module):
         return self.relu(res+out)
 
 class temporal_convolution_network(nn.Module):
-    def __init__(self, n_input, kernel_size, channels=[128, 128, 128, 128]):
+    def __init__(self, device, n_input, kernel_size, input_length, channels=[128, 128, 128, 128]):
         super(temporal_convolution_network, self).__init__()
 
         layers = []
@@ -60,14 +60,12 @@ class temporal_convolution_network(nn.Module):
             layers.append(temporal_block(n_in, n_out, kernel_size, dialation, (kernel_size-1)*dialation))
         
         self.network = nn.Sequential(*layers)
-        self.dense = None
-        self.flat = None
+        self.flat = nn.Flatten()
+        self.dense = nn.Linear(input_length*channels[-1], channels[-1])
+        self.to(device)
 
     def forward(self, x):
         out = self.network(x)
-        if (self.dense is None or self.flat is None):
-            self.dense = nn.Linear(out.shape[-2]*out.shape[-1], out.shape[-2])
-            self.flat = nn.Flatten()
         return self.dense(self.flat(out))
 
 if __name__=="__main__":
