@@ -55,7 +55,7 @@ def train_RNN(device, ds_path):
 def train_TCN(device, ds_path, data_length):
     input_size = get_feature_num(ds_path)
     learning_rate = 5e-6
-    batch_size = 64
+    batch_size = 50
     num_epochs = 20
     channels = [input_size-(input_size-33)//5, input_size-(input_size-33)//5*2, input_size-(input_size-33)//5*3, input_size-(input_size-33)//5*4, 33]
 
