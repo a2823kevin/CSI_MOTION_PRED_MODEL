@@ -143,7 +143,7 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
                 cv2.putText(tcanvas, "target", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
                 cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, tcanvas), 1))
                 cv2.imwrite(f"test{i}.png", numpy.concatenate((pcanvas, tcanvas), 1))
-                cv2.waitKey(1)
+                cv2.waitKey(10)
 
         elif (mode=="realtime"):
             #load settings
