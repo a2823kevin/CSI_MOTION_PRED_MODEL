@@ -6,8 +6,11 @@ import numpy
 import pandas
 import cv2
 import torch
+
 from models.RNN import *
+from models.LSTM import *
 from models.TCN import *
+
 from mp_utils import *
 
 def get_feature_num(fpath):
@@ -128,7 +131,7 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
         if (mode=="from_ds"):
             for i in range(len(ds)):
                 pcanvas, tcanvas = numpy.copy(drawing_utils["canvas"]), numpy.copy(drawing_utils["canvas"])
-                prediction = model(ds[i][0].to(device=device).reshape(1, 128, 128))
+                prediction = model(ds[i][0].to(device=device))
                 prediction_lm = generate_landmark(drawing_utils["landmark_template"], prediction)
                 solutions.drawing_utils.draw_landmarks(pcanvas, prediction_lm, drawing_utils["connection"], drawing_utils["pls"])
                 pcanvas = cv2.flip(pcanvas, 1)
@@ -176,7 +179,7 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
                 while (len(data)>128):
                     data.pop(0)
                 if (len(data)==128):
-                    prediction = model(torch.transpose(torch.tensor(data, dtype=torch.float, device=device), 0, 1).reshape(1, 128, 128))
+                    prediction = model(torch.transpose(torch.tensor(data, dtype=torch.float, device=device), 0, 1))
                     prediction_lm = generate_landmark(drawing_utils["landmark_template"], prediction)
                     pcanvas = numpy.copy(drawing_utils["canvas"])
                     solutions.drawing_utils.draw_landmarks(pcanvas, prediction_lm, drawing_utils["connection"], drawing_utils["pls"])
@@ -191,7 +194,10 @@ if __name__=="__main__":
         settings = json.load(fin)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
-    ds = generate_CSI_dataset("training data/20220915203948_8CCE4E9A045C_mp_skeleton.csv", "regression", size=75)
+
+    ds_path = ""
+    ds = generate_CSI_dataset(ds_path, "regression", size=75)
+    input_size = get_feature_num(ds_path)
 
     drawing_utils = Manager().dict()
     drawing_utils["landmark_template"] = get_landmark_template()
@@ -200,11 +206,11 @@ if __name__=="__main__":
     drawing_utils["canvas"] = numpy.zeros((settings["canvas_height"], settings["canvas_width"], 3), dtype=numpy.uint8)
     drawing_utils["tcanvas"] = None
 
-    #test_model(device, model, drawing_utils, ds=ds)
-    model = temporal_convolution_network(128, 2, channels=[109, 90, 71, 52, 33])
-    #print(model)
-    from torch.utils.data import DataLoader
-    ds = DataLoader(ds, 10, False)
-    for batch in ds:
-        imgs, labels = batch
-        print(model(imgs))
+    rnn = RNN(device, input_size, 256, 8, 33, 25)
+    lstm = LSTM(device, input_size, 33, 8, 25)
+    tcn = temporal_convolution_network(device, input_size, 2, 25, channels=[109, 90, 71, 52, 33])
+
+    model = None
+    with open("", "rb") as fin:
+        model.load_state_dict(torch.load(fin))
+    test_model(device, model, drawing_utils, ds=ds)
