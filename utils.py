@@ -18,7 +18,7 @@ def get_feature_num(fpath):
             num += 1
     return num
 
-def generate_CSI_dataset(fpath, ds_for, label=None, size=25):
+def generate_CSI_dataset(fpath, ds_for, model=None, label=None, size=25):
     #load data
     if (ds_for!="segmentation"):
         fin = pandas.read_csv(fpath)
@@ -59,6 +59,8 @@ def generate_CSI_dataset(fpath, ds_for, label=None, size=25):
         for i in range(len(fin)-size):
             data = fin.iloc[i:i+size, :]
             data = (torch.tensor(data.transpose().to_numpy()).type(torch.float))
+            if (model=="lstm"):
+                data = torch.transpose(data, 0, 1)
             label = MP_fin.iloc[i+size-1, :]
             label = (torch.tensor(label.transpose().to_numpy()).type(torch.float))
             dataset.append((data, label))
