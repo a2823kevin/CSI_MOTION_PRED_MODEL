@@ -131,7 +131,7 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
         if (mode=="from_ds"):
             for i in range(len(ds)):
                 pcanvas, tcanvas = numpy.copy(drawing_utils["canvas"]), numpy.copy(drawing_utils["canvas"])
-                prediction = model(ds[i][0].to(device=device))
+                prediction = model(ds[i][0].reshape(1, ds[i][0].shape[0], ds[i][0].shape[1]).to(device=device))
                 prediction_lm = generate_landmark(drawing_utils["landmark_template"], prediction)
                 solutions.drawing_utils.draw_landmarks(pcanvas, prediction_lm, drawing_utils["connection"], drawing_utils["pls"])
                 pcanvas = cv2.flip(pcanvas, 1)
@@ -142,7 +142,6 @@ def test_model(device, model, drawing_utils, mode="from_ds", ds=None):
                 tcanvas = cv2.flip(tcanvas, 1)
                 cv2.putText(tcanvas, "target", (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
                 cv2.imshow("Skeleton mask", numpy.concatenate((pcanvas, tcanvas), 1))
-                cv2.imwrite(f"test{i}.png", numpy.concatenate((pcanvas, tcanvas), 1))
                 cv2.waitKey(10)
 
         elif (mode=="realtime"):
@@ -195,8 +194,8 @@ if __name__=="__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
 
-    ds_path = ""
-    ds = generate_CSI_dataset(ds_path, "regression", size=75)
+    ds_path = "training data/20220921171056_8CCE4E9A045C_mp_skeleton.csv"
+    ds = generate_CSI_dataset(ds_path, "regression", "lstm", size=25)
     input_size = get_feature_num(ds_path)
 
     drawing_utils = Manager().dict()
@@ -207,10 +206,20 @@ if __name__=="__main__":
     drawing_utils["tcanvas"] = None
 
     rnn = RNN(device, input_size, 256, 8, 33, 25)
-    lstm = LSTM(device, input_size, 33, 8, 25)
-    tcn = temporal_convolution_network(device, input_size, 2, 25, channels=[109, 90, 71, 52, 33])
+    lstm = LSTM(device, input_size, 33, 8, 50)
+    channels = [input_size-(input_size-33)//5, 
+    input_size-(input_size-33)//10*2, 
+    input_size-(input_size-33)//10*3, 
+    input_size-(input_size-33)//10*4, 
+    input_size-(input_size-33)//10*5, 
+    input_size-(input_size-33)//10*6, 
+    input_size-(input_size-33)//10*7, 
+    input_size-(input_size-33)//10*8, 
+    input_size-(input_size-33)//10*9, 
+    33]
+    tcn = temporal_convolution_network(device, input_size, 2, 25, channels=channels)
 
-    model = None
-    with open("", "rb") as fin:
+    model = rnn
+    with open("trained model/csi_rnn", "rb") as fin:
         model.load_state_dict(torch.load(fin))
     test_model(device, model, drawing_utils, ds=ds)

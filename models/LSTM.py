@@ -15,8 +15,8 @@ class LSTM(nn.Module):
         self.sigmoid = nn.Sigmoid()
         self.to(device)
 
-    def forward(self, inputs):
-        out, (h_n, c_n) = self.lstm(inputs, None)
+    def forward(self, x):
+        out, (h_n, c_n) = self.lstm(x, None)
         out = out.reshape(out.shape[0], -1)
         outputs = self.fc(out)
         return self.sigmoid(outputs)

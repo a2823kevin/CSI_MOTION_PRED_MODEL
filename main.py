@@ -17,7 +17,7 @@ def train_RNN(device, ds_path, data_length):
     batch_size = 64
     num_epochs = 20
 
-    train_dataset = generate_CSI_dataset(ds_path, "regression")
+    train_dataset = generate_CSI_dataset(ds_path, "regression", "lstm")
     test_dataset = train_dataset[len(train_dataset)*8//10:]
     train_dataset = train_dataset[0:len(train_dataset)*8//10]
 
@@ -57,9 +57,9 @@ def train_LSTM(device, ds_path, data_length):
     input_size = get_feature_num(ds_path)
     learning_rate = 5e-6
     batch_size = 50
-    num_epochs = 20
+    num_epochs = 100
 
-    train_dataset = generate_CSI_dataset(ds_path, "regression", "lstm")
+    train_dataset = generate_CSI_dataset(ds_path, "regression", "lstm", size=data_length)
     test_dataset = train_dataset[len(train_dataset)*8//10:]
     train_dataset = train_dataset[0:len(train_dataset)*8//10]
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size)
@@ -96,10 +96,19 @@ def train_LSTM(device, ds_path, data_length):
 
 def train_TCN(device, ds_path, data_length):
     input_size = get_feature_num(ds_path)
-    learning_rate = 5e-6
+    learning_rate = 5e-7
     batch_size = 50
-    num_epochs = 20
-    channels = [input_size-(input_size-33)//5, input_size-(input_size-33)//5*2, input_size-(input_size-33)//5*3, input_size-(input_size-33)//5*4, 33]
+    num_epochs = 10000
+    channels = [input_size-(input_size-33)//5, 
+    input_size-(input_size-33)//10*2, 
+    input_size-(input_size-33)//10*3, 
+    input_size-(input_size-33)//10*4, 
+    input_size-(input_size-33)//10*5, 
+    input_size-(input_size-33)//10*6, 
+    input_size-(input_size-33)//10*7, 
+    input_size-(input_size-33)//10*8, 
+    input_size-(input_size-33)//10*9, 
+    33]
 
     train_dataset = generate_CSI_dataset(ds_path, "regression")
     test_dataset = train_dataset[len(train_dataset)*8//10:]
@@ -139,10 +148,10 @@ def train_TCN(device, ds_path, data_length):
 if __name__=="__main__":
     os.environ['CUDA_LAUNCH_BLOCKING']='1'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ds_path = "training data/20220915203948_8CCE4E9A045C_mp_skeleton.csv"
+    ds_path = "training data/20220921171056_8CCE4E9A045C_mp_skeleton.csv"
     data_length = 25
 
-    train_RNN(device, ds_path, data_length)
+    #train_RNN(device, ds_path, data_length)
     #train_LSTM(device, ds_path, data_length)
-    #train_TCN(device, ds_path, data_length)
+    train_TCN(device, ds_path, data_length)
     

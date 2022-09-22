@@ -117,7 +117,9 @@ if __name__=="__main__":
     pls = get_simplified_pose_landmarks_style()
 
     while True:
-        (ret, frame) = video_stream.read()        
+        (ret, frame) = video_stream.read()
+        if frame is None:
+            continue
         frame.flags.writeable = False
         lm = get_simplified_pose(frame, proccessor, target="ploting", skip_incomplete=False)
         frame.flags.writeable = True
