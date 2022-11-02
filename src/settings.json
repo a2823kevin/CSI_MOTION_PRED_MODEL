@@ -1,0 +1,8 @@
+{
+    "canvas_height": 480, 
+    "canvas_width": 640, 
+    "AP_IP_ADDR": "192.168.4.1", 
+    "STA_MAC_ARRDS": ["8C:CE:4E:9A:04:5C"], 
+    "CSI_sampling_period": 0.02433200128573919, 
+    "excluded_subcarriers": [1, 2, 3, 4, 5, 6, 33, 60, 61, 62, 63, 64]
+}
