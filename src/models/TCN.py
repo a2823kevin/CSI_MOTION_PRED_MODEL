@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 class Chomp1d(nn.Module):
@@ -62,12 +63,16 @@ class temporal_convolution_network(nn.Module):
         self.network = nn.Sequential(*layers)
         self.flat = nn.Flatten()
         self.dense = nn.Linear(input_length*channels[-1], channels[-1])
+        self.softmax = nn.Softmax(1)
         self.to(device)
 
     def forward(self, x):
         out = self.network(x)
-        return self.dense(self.flat(out))
+        out = self.dense(self.flat(out))
+        return self.softmax(out)
 
 if __name__=="__main__":
-    network = temporal_convolution_network(1, 2)
-    print(network)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    network = temporal_convolution_network(device, 912, 2, 50)
+    data = torch.randn(10, 912, 50).to(device)
+    print(network(data))

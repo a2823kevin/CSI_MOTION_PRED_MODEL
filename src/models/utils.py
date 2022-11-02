@@ -2,10 +2,6 @@ import numpy
 import torch
 import torch.nn as nn
 
-def RMSE(prediction, target):
-    mse = nn.MSELoss()
-    return torch.sqrt(mse(prediction, target)).cpu()
-
 def check_accuracy(device, loader, model):
     losses = []
 
@@ -13,9 +9,10 @@ def check_accuracy(device, loader, model):
     with torch.no_grad():
         for x, y in loader:
             x = x.to(device=device)
-            y = y.to(device=device)
+            y = torch.argmax(y, 1).to(device=device)
             scores = model(x)
-            losses.append(RMSE(scores, y))
+            scores = torch.argmax(scores, 1)
+            losses.append(int(sum(scores==y))/y.shape[0])
 
     # Toggle model back to train
     model.train()

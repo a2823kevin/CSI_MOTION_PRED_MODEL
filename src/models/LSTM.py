@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 class LSTM(nn.Module):
@@ -12,11 +13,18 @@ class LSTM(nn.Module):
         )
 
         self.fc = nn.Linear(input_size*data_length, hidden_size)
-        self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax(1)
         self.to(device)
 
     def forward(self, x):
         out, (h_n, c_n) = self.lstm(x, None)
         out = out.reshape(out.shape[0], -1)
-        outputs = self.fc(out)
-        return self.sigmoid(outputs)
+        out = self.fc(out)
+        return self.softmax(out)
+
+
+if __name__=="__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = LSTM(device, 912, 7, 8, 25)
+    data = torch.rand(1, 25, 912).to(device)
+    print(model(data))
