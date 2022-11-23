@@ -1,57 +1,70 @@
 import os
+import math
+import socket
+import struct
+import multiprocessing
+from multiprocessing import Manager
 import pandas
 import torch
 from sklearn.decomposition import PCA
 
 from preprocessing import *
+from models.TCN import *
+from proc_utils import *
 
-def generate_CSI_dataset(time, settings, data_length, model=None, threshold=0.75, n_PCA_components=None):
+def parse2csi(packet, amp_only=True):
+    csi = {}
+    csi["client_MAC"] = packet[0:6].hex(":").upper()
+    csi["recieved_time"] = struct.unpack("f", packet[6:10])[0]
+    csi["CSI"] = []
+    for i in range(10, 138, 2):
+        if (amp_only==True):
+            csi["CSI"].append(math.sqrt(struct.unpack("b", packet[i:i+1])[0]**2+struct.unpack("b", packet[i+1:i+2])[0]**2))
+        else:
+            subcarrier = []
+            subcarrier.append(math.sqrt(struct.unpack("b", packet[i:i+1])[0]**2+struct.unpack("b", packet[i+1:i+2])[0]**2))
+            subcarrier.append(math.atan2(struct.unpack("b", packet[i:i+1])[0], struct.unpack("b", packet[i+1:i+2])[0]))
+            csi["CSI"].append(subcarrier)
+    return csi
+
+def generate_CSI_dataset(time, settings, data_length, model=None, threshold=0.75, n_Txs=3, n_PCA_components=None):
     dfs = get_dfs_by_time(time)
     for i in range(len(dfs)):
-        dfs[i] = eliminate_excluded_subcarriers(dfs[i])
+        dfs[i] = eliminate_excluded_subcarriers(dfs[i], settings)
         dfs[i] = fix_timestamp(dfs[i])
     dfs = synchronize(dfs)
     df = merge_df(dfs)
 
     #preprocess
     df = interpolate(df)
-    df = convert_to_diff_serie(df, update_settings=False)
-    labels = df["label"]
-
+    df = labeling(df, time, settings, True)
+    labels = df["label"].iloc[1:].reset_index(drop=True)
+    df = convert_to_diff_serie(df.iloc[:, 1:], update_settings=False)
     df = normalize(df, settings["max_amp_diff"], settings["min_amp_diff"])
 
     datas = numpy.zeros(df.shape, numpy.float64)
     for i in range(df.shape[1]):
         datas[:, i] = reduce_noise(df.iloc[:, i])
-    
+
     if (n_PCA_components is not None):
         pca = PCA(n_PCA_components)
-        new_datas = numpy.zeros((len(datas), n_PCA_components*3), numpy.float64)
-        for i in range(0, 3):
-            new_datas[:, n_PCA_components*i:n_PCA_components*(i+1)] = pca.fit_transform(datas[:, 52*i:52*(i+1)])
+        new_datas = numpy.zeros((len(datas), n_PCA_components*n_Txs), numpy.float64)
+        for i in range(0, n_Txs):
+            new_datas[:, n_PCA_components*i:n_PCA_components*(i+1)] = pca.fit_transform(datas[:, (datas.shape[1]//n_Txs)*i:(datas.shape[1]//n_Txs)*(i+1)])
         datas = new_datas
 
     dataset = []
-    action_dict = {
-        "standing": 0,
-        "walking": 1,
-        "get_down": 2,
-        "sitting": 3,
-        "get_up": 4,
-        "lying": 5,
-        "no_person": 6
-    }
-
     for i in range(len(datas)-data_length):
         data = datas[i:i+data_length, :]
         action_count = labels.iloc[i:i+data_length].value_counts()
+
         main_action = action_count.idxmax()
         if (action_count[main_action]/data_length>=threshold):
             data = torch.tensor(data, dtype=torch.float)
             if (model=="tcn"):
                 data = torch.transpose(data, 0, 1)
-            label = [0 for i in range(0, 7)]
-            label[action_dict[main_action]] = 1
+            label = [0 for i in range(0, 6)]
+            label[int(main_action)] = 1
             label = torch.tensor(label, dtype=torch.float)
             dataset.append((data, label))
 
@@ -63,41 +76,74 @@ def merge_datasets(dataset_lst):
             dataset_lst[0].append(dataset_lst[i][j])
     return dataset_lst[0]
 
-def divide_dataset_by_class(dataset):
+def divide_dataset_by_class(ds):
     action_dict = {
-        0: "standing", 
-        1: "walking",
-        2: "get_down",
-        3: "sitting",
-        4: "get_up",
-        5: "lying",
-        6: "no_person"
+        0: "no_person", 
+        1: "standing",
+        2: "walking",
+        3: "getting_up_down",
+        4: "jumping",
+        5: "waving_hands"
     }
 
     ds_dict = {}
     for key in action_dict.values():
         ds_dict[key] = []
-    for (data, label) in dataset:
+    for (data, label) in ds:
         ds_dict[action_dict[int(torch.argmax(label, 0))]].append((data, label))
     
     return ds_dict
 
-if __name__=="__main__":
-    #preprocess datas
-    '''
-    ds_folder = "assets/wifi_csi_har_dataset"
-    for room in os.listdir(ds_folder):
-        for session in os.listdir(f"{ds_folder}/{room}"):
-            if (session!=".DS_Store"):
-                folder_path = f"{ds_folder}/{room}/{session}"
-                merge_data_and_label(folder_path)
-    '''
+def load_weights(model, fpath):
+    with open(fpath, "rb") as fin:
+        state_dict = torch.load(fin)
+        model.load_state_dict(state_dict)
+    return model
 
-    
+def test_model(device, model, data_length, settings, mode="rt", ds=None, n_Txs=3, n_PCA_components=None):
+    model.eval()
+    action_dict = {
+        0: "no_person", 
+        1: "standing",
+        2: "walking",
+        3: "getting_up_down",
+        4: "jumping",
+        5: "waving_hands"
+    }
+
+    if (mode=="rt"):
+        #init
+        proc_dict = Manager().dict()
+        proc_dict["data_length"] = data_length
+        proc_dict["dfs"] = []
+        for i in range(len(settings["STA_MAC_ARRDS"])):
+            proc_dict["dfs"][i] = None
+        proc_dict["data"] = None
+
+        #process
+        rx_proc = multiprocessing.Process(target=UDP_server_proc, args=(proc_dict, settings))
+        rx_proc.start()
+        preprocessing_proc = multiprocessing.Process(target=data_preprocessing_proc, args=(proc_dict, settings))
+        preprocessing_proc.start()
+
+        #predict
+        while True:
+            if (proc_dict["data"] is not None):
+                scores = model(proc_dict["data"])
+                print(f"predicted action: {action_dict[int(torch.argmax(scores, 1))]}")
+
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(device)
+
     with open("src/settings.json", "r") as fin:
         settings = json.load(fin)
 
-    fpath = "assets/preprocessed_datasets/room_1_session1.csv"
-    ds = generate_CSI_dataset(fpath, settings, 25, n_PCA_components=114)
-    
-    print(divide_dataset_by_class(ds))
+    ds = generate_CSI_dataset("20221109202112", settings, 40, "tcn", n_PCA_components=30)
+
+    input_size = ds[0][0].shape[0]
+    data_length = 40
+    model = temporal_convolution_network(device, input_size, 2, data_length, [int(input_size-(input_size-6)*(0.2*i)) for i in range(1, 6)])
+    model = load_weights(model, "assets/trained model/csi_tcn")
+    print(model)
+    test_model(device, model, data_length, settings, n_PCA_components=30)
