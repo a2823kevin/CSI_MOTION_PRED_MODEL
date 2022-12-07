@@ -1,10 +1,8 @@
-import os
 import math
 import socket
 import struct
 import multiprocessing
 from multiprocessing import Manager
-import pandas
 import torch
 from sklearn.decomposition import PCA
 
@@ -100,7 +98,7 @@ def load_weights(model, fpath):
         model.load_state_dict(state_dict)
     return model
 
-def test_model(device, model, data_length, settings, mode="rt", ds=None, n_Txs=3, n_PCA_components=None):
+def test_model(device, model, data_length, settings, indata, mode="rt", ds=None, n_PCA_components=None):
     model.eval()
     action_dict = {
         0: "no_person", 
@@ -113,24 +111,32 @@ def test_model(device, model, data_length, settings, mode="rt", ds=None, n_Txs=3
 
     if (mode=="rt"):
         #init
-        proc_dict = Manager().dict()
-        proc_dict["data_length"] = data_length
-        proc_dict["dfs"] = []
-        for i in range(len(settings["STA_MAC_ARRDS"])):
-            proc_dict["dfs"][i] = None
-        proc_dict["data"] = None
+        lock = multiprocessing.Lock()
+    
+        n_Txs = len(settings["STA_MAC_ARRDS"])
+        sta_map = {}
+        data_arr = Manager().list()
+        for i in range(n_Txs):
+            sta_map[settings["STA_MAC_ARRDS"][i]] = i
+            data_arr.append([])
+        
+        testing_data = Manager().list()
 
         #process
-        rx_proc = multiprocessing.Process(target=UDP_server_proc, args=(proc_dict, settings))
-        rx_proc.start()
-        preprocessing_proc = multiprocessing.Process(target=data_preprocessing_proc, args=(proc_dict, settings))
+        updating_proc = multiprocessing.Process(target=data_updating_proc, args=(indata, data_arr, sta_map))
+        updating_proc.start()
+        preprocessing_proc = multiprocessing.Process(target=data_preprocessing_proc, args=(lock, data_arr, testing_data, settings, data_length, n_PCA_components))
         preprocessing_proc.start()
 
         #predict
+        while (len(testing_data)==n_Txs):
+            continue
+
         while True:
-            if (proc_dict["data"] is not None):
-                scores = model(proc_dict["data"])
-                print(f"predicted action: {action_dict[int(torch.argmax(scores, 1))]}")
+            data = torch.tensor(testing_data, dtype=torch.float).reshape(1, n_PCA_components*n_Txs, data_length).to(device)
+            scores = model(data)
+            print(f"predicted action: {action_dict[int(torch.argmax(scores, 1))]}")
+
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -139,11 +145,28 @@ if __name__ == "__main__":
     with open("src/settings.json", "r") as fin:
         settings = json.load(fin)
 
-    ds = generate_CSI_dataset("20221109202112", settings, 40, "tcn", n_PCA_components=30)
+    ds = generate_CSI_dataset("20221130202730", settings, 40, "tcn", n_PCA_components=30)
 
     input_size = ds[0][0].shape[0]
     data_length = 40
     model = temporal_convolution_network(device, input_size, 2, data_length, [int(input_size-(input_size-6)*(0.2*i)) for i in range(1, 6)])
     model = load_weights(model, "assets/trained model/csi_tcn")
     print(model)
-    test_model(device, model, data_length, settings, n_PCA_components=30)
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("", 3333))
+    print("started UDP server.")
+
+    for i in range(10):
+        s.sendto("rx".encode(), (settings["AP_IP_ADDR"], 3333))
+
+    indata = Manager().dict()
+    testing_proc = multiprocessing.Process(target=test_model, args=(device, model, data_length, settings, indata, "rt", None, 30))
+    testing_proc.start()
+    while True:
+        (packet, _) = s.recvfrom(200)
+        data = parse2csi(packet)
+        if (packet["client_MAC"] not in settings["STA_MAC_ARRDS"]):
+            continue
+        for key in data.keys():
+            indata[key] = data[key]

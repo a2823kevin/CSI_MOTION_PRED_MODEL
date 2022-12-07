@@ -64,7 +64,7 @@ if __name__=="__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
 
-    ds = generate_CSI_dataset("20221109202112", settings, 40, "tcn", n_PCA_components=30)
+    ds = generate_CSI_dataset("20221130202730", settings, 40, "tcn", n_PCA_components=30)
     shuffle(ds)
     ds4testing = divide_dataset_by_class(ds[len(ds)*8//10:])
 
