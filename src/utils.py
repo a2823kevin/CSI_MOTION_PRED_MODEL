@@ -25,7 +25,7 @@ def parse2csi(packet, amp_only=True):
             csi["CSI"].append(subcarrier)
     return csi
 
-def generate_CSI_dataset(time, settings, data_length, model=None, threshold=0.75, n_Txs=3, n_PCA_components=None):
+def generate_CSI_dataset(time, settings, data_length, model=None, threshold=0.75, n_Txs=3, n_PCA_components=None, return_pca=False):
     dfs = get_dfs_by_time(time)
     for i in range(len(dfs)):
         dfs[i] = eliminate_excluded_subcarriers(dfs[i], settings)
@@ -34,7 +34,6 @@ def generate_CSI_dataset(time, settings, data_length, model=None, threshold=0.75
     df = merge_df(dfs)
 
     #preprocess
-    df = interpolate(df)
     df = labeling(df, time, settings, True)
     labels = df["label"].iloc[1:].reset_index(drop=True)
     df = convert_to_diff_serie(df.iloc[:, 1:], update_settings=False)
@@ -66,6 +65,8 @@ def generate_CSI_dataset(time, settings, data_length, model=None, threshold=0.75
             label = torch.tensor(label, dtype=torch.float)
             dataset.append((data, label))
 
+    if (return_pca==True):
+        return (dataset, pca)
     return dataset
 
 def merge_datasets(dataset_lst):
@@ -98,44 +99,43 @@ def load_weights(model, fpath):
         model.load_state_dict(state_dict)
     return model
 
-def test_model(device, model, data_length, settings, indata, mode="rt", ds=None, n_PCA_components=None):
-    model.eval()
-    action_dict = {
-        0: "no_person", 
-        1: "standing",
-        2: "walking",
-        3: "getting_up_down",
-        4: "jumping",
-        5: "waving_hands"
-    }
-
+def test_model(data_length, settings, lock, data_arr, testing_data, mode="rt", ds=None, n_PCA_components=None, pca=None):
     if (mode=="rt"):
-        #init
-        lock = multiprocessing.Lock()
-    
-        n_Txs = len(settings["STA_MAC_ARRDS"])
-        sta_map = {}
-        data_arr = Manager().list()
-        for i in range(n_Txs):
-            sta_map[settings["STA_MAC_ARRDS"][i]] = i
-            data_arr.append([])
-        
-        testing_data = Manager().list()
-
-        #process
-        updating_proc = multiprocessing.Process(target=data_updating_proc, args=(indata, data_arr, sta_map))
-        updating_proc.start()
-        preprocessing_proc = multiprocessing.Process(target=data_preprocessing_proc, args=(lock, data_arr, testing_data, settings, data_length, n_PCA_components))
-        preprocessing_proc.start()
-
         #predict
-        while (len(testing_data)==n_Txs):
-            continue
+        n_Txs = len(settings["STA_MAC_ARRDS"])
 
         while True:
-            data = torch.tensor(testing_data, dtype=torch.float).reshape(1, n_PCA_components*n_Txs, data_length).to(device)
-            scores = model(data)
-            print(f"predicted action: {action_dict[int(torch.argmax(scores, 1))]}")
+            lock.value = True
+            arr = list(data_arr)
+            lock.value = False
+            start = True
+            for i in range(n_Txs):
+                print(len(arr[i]))
+                if (len(arr[i])<data_length+1):
+                    start = False
+            if (start==False):
+                continue
+
+            for i in range(n_Txs):
+                arr[i] = eliminate_excluded_subcarriers(numpy.array(arr[i]), settings, "numpy")
+            df = merge_df(arr, "numpy")
+            df = pandas.DataFrame(df)
+            df = convert_to_diff_serie(df)
+            df = normalize(df, settings["max_amp_diff"], settings["min_amp_diff"])
+
+            data = numpy.zeros(df.shape, numpy.float64)
+            for i in range(df.shape[1]):
+                data[:, i] = reduce_noise(df.iloc[:, i])
+
+            if (n_PCA_components is not None):
+                new_data = numpy.zeros((len(data), n_PCA_components*n_Txs), numpy.float64)
+                for i in range(0, n_Txs):
+                    new_data[:, n_PCA_components*i:n_PCA_components*(i+1)] = pca.transform(data[:, (data.shape[1]//n_Txs)*i:(data.shape[1]//n_Txs)*(i+1)])
+                data = new_data
+
+            testing_data.put(data.tolist())
+
+
 
 
 if __name__ == "__main__":
@@ -145,7 +145,8 @@ if __name__ == "__main__":
     with open("src/settings.json", "r") as fin:
         settings = json.load(fin)
 
-    ds = generate_CSI_dataset("20221130202730", settings, 40, "tcn", n_PCA_components=30)
+    ds, pca = generate_CSI_dataset("20221214205155", settings, 40, "tcn", n_PCA_components=30, return_pca=True)
+    print(len(ds))
 
     input_size = ds[0][0].shape[0]
     data_length = 40
@@ -160,13 +161,47 @@ if __name__ == "__main__":
     for i in range(10):
         s.sendto("rx".encode(), (settings["AP_IP_ADDR"], 3333))
 
-    indata = Manager().dict()
-    testing_proc = multiprocessing.Process(target=test_model, args=(device, model, data_length, settings, indata, "rt", None, 30))
+    #init
+    model.eval()
+    action_dict = {
+        0: "no_person", 
+        1: "standing",
+        2: "walking",
+        3: "getting_up_down",
+        4: "jumping",
+        5: "waving_hands"
+    }
+    n_PCA_components = 30
+    indata = {}
+    sta_map = {}
+    data_arr = Manager().list()
+    testing_data = multiprocessing.Queue()
+    lock = multiprocessing.Value("i", False)
+
+    n_Txs = len(settings["STA_MAC_ARRDS"])
+    for i in range(n_Txs):
+        sta_map[settings["STA_MAC_ARRDS"][i]] = i
+        data_arr.append([])
+
+    testing_proc = multiprocessing.Process(target=test_model, args=(data_length, settings, lock, data_arr, testing_data, "rt", None, n_PCA_components, pca))
     testing_proc.start()
+
     while True:
         (packet, _) = s.recvfrom(200)
         data = parse2csi(packet)
-        if (packet["client_MAC"] not in settings["STA_MAC_ARRDS"]):
+        if (data["client_MAC"] not in settings["STA_MAC_ARRDS"]):
             continue
-        for key in data.keys():
-            indata[key] = data[key]
+
+        if (lock.value==False):
+            idx = sta_map[data["client_MAC"]]
+            lst = data_arr[idx]
+            while (len(lst)>data_length):
+                lst.pop(0)
+            lst.append(data["CSI"])
+            data_arr[idx] = lst
+        
+        if (testing_data.qsize()>0):
+            d = testing_data.get(True)
+            d = torch.tensor(d, dtype=torch.float).reshape(1, n_PCA_components*n_Txs, data_length).to(device)
+            scores = model(d)
+            print(f"predicted action: {action_dict[int(torch.argmax(scores, 1))]}")

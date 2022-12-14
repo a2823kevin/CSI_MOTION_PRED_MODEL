@@ -78,7 +78,7 @@ def eliminate_excluded_subcarriers(df, settings, object_type="df"):
 
     return df
 
-def fix_timestamp(df):
+def fix_timestamp(df, fix_dup=False):
     timestamps = df["timestamp"]
     discontinuities = []
 
@@ -92,26 +92,35 @@ def fix_timestamp(df):
         for idx in range(discontinuities[i], discontinuities[i+1]):
             df["timestamp"].loc[idx] += df["timestamp"][discontinuities[i]-1]
 
-    #search timing that is identical to the previous one
-    timestamps = df["timestamp"]
-    for i in range(1, len(timestamps)):
-        if (timestamps[i]==timestamps[i-1]):
-            df = df.drop(i, axis=0)
+    if (fix_dup==True):
+        #search timing that is identical to the previous one
+        timestamps = df["timestamp"]
+        for i in range(1, len(timestamps)):
+            if (timestamps[i]==timestamps[i-1]):
+                df = df.drop(i, axis=0)
     
     return df.reset_index(drop=True)
 
-def synchronize(dfs):
-    #find timestamp intersection of all files
-    timestamps = set(dfs[0]["timestamp"].values.tolist())
-    for i in range(1, len(dfs)):
-        timestamps = timestamps.intersection(set(dfs[i]["timestamp"].values.tolist()))
+def synchronize(dfs, strict=False):
+    if (strict==True):
+        #find timestamp intersection of all files
+        timestamps = set(dfs[0]["timestamp"].values.tolist())
+        for i in range(1, len(dfs)):
+            timestamps = timestamps.intersection(set(dfs[i]["timestamp"].values.tolist()))
 
-    #drop rows that aren't in the timestamp
-    for i in range(0, len(dfs)):
-        for j in range(len(dfs[i]["timestamp"])):
-            if (dfs[i]["timestamp"][j] not in timestamps):
-                dfs[i] = dfs[i].drop(j, axis=0)
-        dfs[i] = dfs[i].reset_index(drop=True)
+        #drop rows that aren't in the timestamp
+        for i in range(0, len(dfs)):
+            for j in range(len(dfs[i]["timestamp"])):
+                if (dfs[i]["timestamp"][j] not in timestamps):
+                    dfs[i] = dfs[i].drop(j, axis=0)
+            dfs[i] = dfs[i].reset_index(drop=True)
+    else:
+        min_length = 99999999
+        for i in range(1, len(dfs)):
+            if (len(dfs[i])<min_length):
+                min_length = len(dfs[i])
+        for i in range(0, len(dfs)):
+            dfs[i] = dfs[i].iloc[:min_length, :]
     return dfs
 
 def merge_df(dfs, object_type="df"):

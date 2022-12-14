@@ -11,7 +11,7 @@ def train_TCN(device, dataset, data_length, settings):
     
     input_size = dataset[0][0].shape[0]
     learning_rate = 1e-4
-    batch_size = 50
+    batch_size = 25
     num_epochs = 10000
 
     test_dataset = dataset[len(dataset)*8//10:]
@@ -64,7 +64,7 @@ if __name__=="__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(device)
 
-    ds = generate_CSI_dataset("20221130202730", settings, 40, "tcn", n_PCA_components=30)
+    ds = generate_CSI_dataset("20221214205155", settings, 40, "tcn", n_PCA_components=30)
     shuffle(ds)
     ds4testing = divide_dataset_by_class(ds[len(ds)*8//10:])
 
